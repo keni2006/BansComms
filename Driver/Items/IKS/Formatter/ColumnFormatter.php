@@ -50,7 +50,7 @@ class ColumnFormatter implements ColumnFormatterInterface
                 } else if (Date.now() >= Number(ends) * 1000 && time != '0') {
                     return '<div class=\"ban-chip bans-end\">' + secondsToReadable(time) + '</div>';
                 } else {
-                    return '<div class=\"ban-chip\">' + secondsToReadable(length) + '</div>';
+                    return '<div class=\"ban-chip\">' + secondsToReadable(time) + '</div>';
                 }
             }
         ";
@@ -71,7 +71,7 @@ class ColumnFormatter implements ColumnFormatterInterface
                 } else if (Date.now() >= Number(ends) * 1000 && time != '0') {
                     return '<div class=\"ban-chip bans-end\">' + secondsToReadable(time) + '</div>';
                 } else {
-                    return '<div class=\"ban-chip\">' + secondsToReadable(length) + '</div>';
+                    return '<div class=\"ban-chip\">' + secondsToReadable(time) + '</div>';
                 }
             }
         ";
