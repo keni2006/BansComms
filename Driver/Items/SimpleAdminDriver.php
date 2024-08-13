@@ -1,5 +1,6 @@
 <?php
-
+//Время было в не правильном формате, минуты считал за секунды по дефолту Simple Банит в минутах типо 1-1 минута итд......
+//Не правильный запрос был в бд не отображало стату 
 namespace Flute\Modules\BansComms\Driver\Items;
 
 use Flute\Core\Database\Entities\Server;
@@ -95,41 +96,46 @@ class SimpleAdminDriver implements DriverInterface
         ';
     }
 
-    private function timeFormatRender(): string
-    {
-        return "
-            function(data, type, full) {
-                let time = full[12];
-                let ends = full[11];
 
-                if (time == '0') {
-                    return '<div class=\"ban-chip bans-forever\">'+ t(\"banscomms.table.forever\") +'</div>';
-                } else if (Date.now() >= new Date(ends) && time != '0') {
-                    return '<div class=\"ban-chip bans-end\">' + secondsToReadable(time) + '</div>';
-                } else {
-                    return '<div class=\"ban-chip\">' + secondsToReadable(time) + '</div>';
-                }
+private function timeFormatRender(): string
+{
+    return "
+        function(data, type, full) {
+            let time = full[12]; // Предполагаем, что время хранится в 12-м элементе массива
+            let ends = full[11];
+
+            if (time == '0') {
+                return '<div class=\"ban-chip bans-forever\">'+ t(\"banscomms.table.forever\") +'</div>';
+            } else if (Date.now() >= new Date(ends) && time != '0') {
+                let seconds = time * 60; // Преобразуем минуты в секунды
+                return '<div class=\"ban-chip bans-end\">' + secondsToReadable(seconds) + '</div>';
+            } else {
+                let seconds = time * 60; // Преобразуем минуты в секунды
+                return '<div class=\"ban-chip\">' + secondsToReadable(seconds) + '</div>';
             }
-        ";
-    }
+        }
+    ";
+}
 
-    private function timeFormatRenderBans(): string
-    {
-        return "
-            function(data, type, full) {
-                let time = full[11];
-                let ends = full[10];
+private function timeFormatRenderBans(): string
+{
+    return "
+        function(data, type, full) {
+            let time = full[11]; // Предполагаем, что время хранится в 11-м элементе массива
+            let ends = full[10];
 
-                if (time == '0') {
-                    return '<div class=\"ban-chip bans-forever\">'+ t(\"banscomms.table.forever\") +'</div>';
-                } else if (Date.now() >= new Date(ends) && time != '0') {
-                    return '<div class=\"ban-chip bans-end\">' + secondsToReadable(time) + '</div>';
-                } else {
-                    return '<div class=\"ban-chip\">' + secondsToReadable(time) + '</div>';
-                }
+            if (time == '0') {
+                return '<div class=\"ban-chip bans-forever\">'+ t(\"banscomms.table.forever\") +'</div>';
+            } else if (Date.now() >= new Date(ends) && time != '0') {
+                let seconds = time * 60; // Преобразуем минуты в секунды
+                return '<div class=\"ban-chip bans-end\">' + secondsToReadable(seconds) + '</div>';
+            } else {
+                let seconds = time * 60; // Преобразуем минуты в секунды
+                return '<div class=\"ban-chip\">' + secondsToReadable(seconds) + '</div>';
             }
-        ";
-    }
+        }
+    ";
+}
 
     public function getUserBans(
         User $user,
@@ -338,11 +344,27 @@ class SimpleAdminDriver implements DriverInterface
         ];
     }
 
-    private function prepareSelectQuery(Server $server, string $dbname, array $columns, array $search, array $order, string $tableName = 'bans')
+    private function prepareSelectQuery(Server $server, string $dbname, array $columns, array $search, array $order, string $table = 'bans')
+    {
+        if ($table === 'comms') {
+            // Initialize an array to hold select queries
+            $selectQueries = [];
+
+            foreach (['mutes', 'gags'] as $tableName) {
+                $select = $this->buildSelectQuery($dbname, $tableName, $columns, $search, $order);
+                array_push($selectQueries, $select);
+            }
+
+            return $selectQueries;
+        } else {
+            return $this->buildSelectQuery($dbname, "bans", $columns, $search, $order);
+        }
+    }
+
+    private function buildSelectQuery(string $dbname, string $tableName, array $columns, array $search, array $order)
     {
         $select = dbal()->database($dbname)->table($tableName)->select()->columns([
             "$tableName.*",
-            'admins.player_name as admin_name',
             new Fragment("'$tableName' as source")
         ]);
 
@@ -356,8 +378,8 @@ class SimpleAdminDriver implements DriverInterface
         // Applying global search
         if (isset($search['value']) && !empty($search['value'])) {
             $select->where(function ($select) use ($search, $tableName) {
-                $select->where("$tableName.player_steamid", 'like', '%' . $search['value'] . '%')
-                    ->orWhere("$tableName.player_name", 'like', '%' . $search['value'] . '%')
+                $select->where("$tableName.player_name", 'like', '%' . $search['value'] . '%')
+                    ->orWhere("$tableName.player_steamid", 'like', '%' . $search['value'] . '%')
                     ->orWhere("$tableName.admin_steamid", 'like', '%' . $search['value'] . '%')
                     ->orWhere("$tableName.admin_name", 'like', '%' . $search['value'] . '%')
                     ->orWhere("$tableName.reason", 'like', '%' . $search['value'] . '%');
@@ -375,15 +397,6 @@ class SimpleAdminDriver implements DriverInterface
             }
         }
 
-        // Join with admins table
-        $select->innerJoin('admins')->on(["$tableName.admin_steamid" => 'admins.player_steamid']);
-
-        if ($server) {
-            $select->innerJoin('servers')->on(["$tableName.server_id" => 'servers.id'])->where([
-                'servers.address' => $server->ip . ':' . $server->port,
-            ]);
-        }
-
         return $select;
     }
 
@@ -392,8 +405,8 @@ class SimpleAdminDriver implements DriverInterface
         $db = dbal()->database($dbname);
 
         $bansCount = $db->table('bans')->select();
-        $mutesCount = $db->table('mutes')->select()->where('type', 'MUTE');
-        $gagsCount = $db->table('mutes')->select()->where('type', 'GAG');
+        $mutesCount = $db->table('mutes')->select();
+        $gagsCount = $db->table('gags')->select();
 
         if (!empty($excludeAdmins)) {
             $bansCount->andWhere([
@@ -504,7 +517,6 @@ class SimpleAdminDriver implements DriverInterface
 
         return $mappedResults;
     }
-
     public function getName(): string
     {
         return "SimpleAdmin";
